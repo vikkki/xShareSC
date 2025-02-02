@@ -156,7 +156,7 @@ server <- function(input, output, session) {
   output$dotPlot <- renderPlot({
     req(seurat_data(), input$gene_select)
     DotPlot(seurat_data(), features = input$gene_select, group.by = input$metadata) + 
-      scale_color_gradient2(low = "red", mid = "white", high = "green", midpoint = 0.5) +
+      scale_color_gradient2(low = "#9a031e", mid = "#EDEDED", high = "#90a955", midpoint = 0.5) +
       ggtitle("Dot Plot for Selected Genes")
   })
 }
