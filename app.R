@@ -1,66 +1,99 @@
 library(shiny)
+library(shinyjs)
 library(Seurat)
 library(ggplot2)
 library(dplyr)
-library(patchwork)
+#library(patchwork)
 library(bslib)
-library(fontawesome)      # For status icons
+library(fontawesome)
 
 # Define the directory containing Seurat objects
 data_dir <- "data/"
 available_files <- list.files(data_dir, pattern = "\\.rds$", full.names = FALSE)
 
-# Define UI with a modern design
+# Set the correct password
+password_env <- Sys.getenv("SHINY_APP_PASSWORD")
+
+# Define UI with password authentication
 ui <- fluidPage(
   theme = bs_theme(bootswatch = "flatly"),  # Use Flatly Bootstrap theme
+  useShinyjs(),  # Enable JavaScript for UI actions
   
-  tags$head(tags$style(HTML("
-    .container-custom { max-width: 1200px; margin: auto; }
-    .card { padding: 20px; margin-bottom: 20px; box-shadow: 0px 4px 8px rgba(0,0,0,0.1); border-radius: 10px; }
-    .btn-custom { width: 100%; }
-  "))),
-  
-  div(class = "container-custom",
-      # h2("Seurat Data Visualization", class = "text-center mb-4"),
-      
-      # Selection Panel
-      div(class = "card",
-          fluidRow(
-            column(6, 
-                   selectInput("seurat_file", "Select Seurat Object:", choices = available_files)),
-            column(6, 
-                   uiOutput("metadata_selector"))
-          ),
-          
-          fluidRow(
-            column(8, 
-                   selectizeInput("gene_select", "Select Gene(s):", choices = NULL, multiple = TRUE,
-                                  options = list(placeholder = "Type to search...", maxOptions = 100))),
-            column(4, 
-                   actionButton("update", "Update Visualization", class = "btn btn-primary btn-custom"))
-          ),
-          # Status Message
-          div(class = "loading-status",
-              uiOutput("status_message"))
-      ),
-      
-      # Visualization Panel
-      div(class = "card",
-          tabsetPanel(
-            tabPanel("UMAP Plot", plotOutput("umapPlot", height = "500px")),
-            tabPanel("Feature Plot", uiOutput("featurePlots")),
-            tabPanel("Dot Plot", plotOutput("dotPlot", height = "500px"))
-          )
-      )
-  ),
-  
-  footer = div(class = "text-center mt-5 p-3", 
-               tags$p("© 2025 Seurat Visualization App (XiaofanZhao, XiaLab OHSU). Powered by Shiny.")
-  )
+  uiOutput("auth_ui"),  # This will dynamically show either login modal or the app
 )
 
-# Define server logic
 server <- function(input, output, session) {
+  
+  # Reactive value to track login status
+  user_auth <- reactiveVal(FALSE)
+  
+  # Show password modal on startup
+  observe({
+    showModal(
+      modalDialog(
+        title = "Enter Password",
+        passwordInput("password", "Password:"),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton("submit_password", "Submit")
+        ),
+        easyClose = FALSE  # Prevent closing without entering password
+      )
+    )
+  })
+  
+  # Check password when user submits
+  observeEvent(input$submit_password, {
+    if (input$password == password_env) {
+      user_auth(TRUE)
+      removeModal()  # Remove the modal if the password is correct
+    } else {
+      showNotification("Incorrect password! Try again.", type = "error")
+    }
+  })
+  
+  # Dynamically display the app UI if logged in
+  output$auth_ui <- renderUI({
+    if (user_auth()) {
+      # Main App UI
+      div(class = "container-custom",
+          div(class = "card",
+              fluidRow(
+                column(6, 
+                       selectInput("seurat_file", "Select Seurat Object:", choices = available_files)),
+                column(6, 
+                       uiOutput("metadata_selector"))
+              ),
+              
+              fluidRow(
+                column(8, 
+                       selectizeInput("gene_select", "Select Gene(s):", choices = NULL, multiple = TRUE,
+                                      options = list(placeholder = "Type to search...", maxOptions = 100))),
+                column(4, 
+                       actionButton("update", "Update Visualization", class = "btn btn-primary btn-custom"))
+              ),
+              
+              # Status Message
+              div(class = "loading-status",
+                  uiOutput("status_message"))
+          ),
+          
+          # Visualization Panel
+          div(class = "card",
+              tabsetPanel(
+                tabPanel("UMAP Plot", plotOutput("umapPlot", height = "500px")),
+                tabPanel("Feature Plot", uiOutput("featurePlots")),
+                tabPanel("Dot Plot", plotOutput("dotPlot", height = "500px"))
+              )
+          ),
+          
+          footer = div(class = "text-center mt-5 p-3", 
+                       tags$p("© 2025 Seurat Data Visualization (XiaofanZhao, XiaLab OHSU). Powered by Shiny."))
+      )
+    } else {
+      div()  # Empty UI until password is entered
+    }
+  })
   
   # Load the selected Seurat object
   seurat_data <- reactive({
@@ -81,7 +114,7 @@ server <- function(input, output, session) {
     
     updateSelectizeInput(session, "gene_select", 
                          choices = rownames(seurat_obj), 
-                         selected = default_gene,  # Set default gene to GNLY if available
+                         selected = default_gene,  
                          server = TRUE)
     
     # Filter metadata to include only categorical variables (factors or characters)
@@ -116,10 +149,8 @@ server <- function(input, output, session) {
       return(NULL)
     }
     
-    # Generate UMAP plot
     DimPlot(seurat_obj, reduction = reduction_to_use, group.by = input$metadata) + 
       ggtitle(paste("UMAP Visualization using", reduction_to_use))
-    #DimPlot(seurat_data(), reduction = "umap", group.by = input$metadata) + ggtitle("UMAP Visualization")
   })
   
   # Render feature plots for all selected genes
